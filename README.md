@@ -1,6 +1,6 @@
 # Maximum Agreement Secondary Structures (MASS)
 
-MASS is a tool that summarizes RNA structure space. MASS accepts inputs in different formats as long as they provide a list/set of structures in dot-bracket format. As a result, MASS returns how structures will be clustered, and the features selected that produce such clusters of structures.
+MASS is a tool for summarizing RNA structural ensembles. It takes as input any collection of RNA secondary structures in dot–bracket format and identifies how the structures cluster together. MASS also reports the key structural features responsible for producing these clusters.
 
 ## Installation
 
