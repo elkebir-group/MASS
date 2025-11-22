@@ -1,0 +1,5 @@
+numpy>=1.19.0
+pandas>=1.3.0
+gurobipy>=9.0.0
+psutil>=5.8.0
+
