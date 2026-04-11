@@ -10,10 +10,7 @@ into at most tau clusters for a given binary matrix.
 import numpy as np
 
 
-def MSTPPartition(X, tau, topN=np.inf, use_structure_coverage=False, 
-                  column_weight=0.7, structure_coverage_weight=0.3,
-                  use_lexicographic=False, use_epsilon_secondary=True,
-                  epsilon_secondary=1.0, delta_secondary=1.0):
+def MSTPPartition(X, tau, topN=np.inf):
     """
     MSTP (Max-Subset τ-Partitioning) algorithm for binary matrix clustering.
     
@@ -25,14 +22,6 @@ def MSTPPartition(X, tau, topN=np.inf, use_structure_coverage=False,
         tau (int): Maximum number of clusters allowed
         topN (int or float): Maximum number of partitions to keep at each iteration
                             (default: np.inf for no limit)
-        use_structure_coverage (bool): Enable structure coverage optimization (default: False)
-        column_weight (float): Weight for column selection objective (default: 0.7)
-        structure_coverage_weight (float): Weight for structure coverage objective (default: 0.3)
-        use_lexicographic (bool): Use lexicographic multi-objective optimization (default: False)
-        use_epsilon_secondary (bool): Use epsilon secondary term (default: True)
-        epsilon_secondary (float): Scaling factor for secondary objective (default: 1.0)
-        delta_secondary (float): Denominator offset for scaling coverage term (default: 1.0)
-        
     Returns:
         np.ndarray: Solution list (tau × M) where each row indicates which 
                    columns to include for that tau value
@@ -154,37 +143,15 @@ def MSTPPartition(X, tau, topN=np.inf, use_structure_coverage=False,
 
         return matchMatrix
 
-    def findMaximalPartition(partitionList, X, X_inverse, tau, use_structure_coverage=False, 
-                           column_weight=0.7, structure_coverage_weight=0.3,
-                           use_lexicographic=False, use_epsilon_secondary=True,
-                           epsilon_secondary=1.0, delta_secondary=1.0):
+    def findMaximalPartition(partitionList, X, X_inverse, tau):
         partitionSize = np.max(partitionList, axis=1) + 1
 
         _, count1 = np.unique(X_inverse, return_counts=True)
 
         matchMatrix = findCompatable(partitionList, X)
 
-        # Calculate column selection objective (original objective)
-        column_objective = np.sum(matchMatrix * count1.reshape((1, -1)), axis=1)
-        
-        # Calculate structure coverage objective if enabled
-        if use_structure_coverage:
-            # Count how many structures are covered by each partition
-            structure_coverage = np.sum(matchMatrix, axis=1)
-            
-            if use_lexicographic:
-                # Lexicographic: First maximize column selection, then structure coverage
-                # Use column objective as primary, structure coverage as tie-breaker
-                total_objective = column_objective + (structure_coverage / (structure_coverage.max() + 1e-10)) * 0.1
-            elif use_epsilon_secondary:
-                # Epsilon secondary: column_objective + epsilon * structure_coverage
-                total_objective = column_objective + epsilon_secondary * (structure_coverage / (structure_coverage.max() + 1e-10))
-            else:
-                # Blended objective: weighted combination
-                total_objective = column_weight * column_objective + structure_coverage_weight * structure_coverage
-        else:
-            # Original objective (column selection only)
-            total_objective = column_objective
+        # Objective: column selection only
+        total_objective = np.sum(matchMatrix * count1.reshape((1, -1)), axis=1)
 
         solutionList = np.zeros((tau, X_inverse.shape[0]), dtype=int)
 
@@ -196,10 +163,7 @@ def MSTPPartition(X, tau, topN=np.inf, use_structure_coverage=False,
 
         return solutionList
 
-    def fullAlgorithm(X, tau, topN, use_structure_coverage=False, 
-                     column_weight=0.7, structure_coverage_weight=0.3,
-                     use_lexicographic=False, use_epsilon_secondary=True,
-                     epsilon_secondary=1.0, delta_secondary=1.0):
+    def fullAlgorithm(X, tau, topN):
         X = X.T  # Easier to think through when transposed.
 
         X, X_inverse = preProcess(X)
@@ -219,9 +183,7 @@ def MSTPPartition(X, tau, topN=np.inf, use_structure_coverage=False,
 
                 partitionList_total = np.concatenate((partitionList_total, np.copy(partitionList)), axis=0)
 
-        solutionList = findMaximalPartition(partitionList_total, X, X_inverse, tau,
-                                          use_structure_coverage, column_weight, structure_coverage_weight,
-                                          use_lexicographic, use_epsilon_secondary, epsilon_secondary, delta_secondary)
+        solutionList = findMaximalPartition(partitionList_total, X, X_inverse, tau)
 
         return solutionList
 
@@ -238,9 +200,7 @@ def MSTPPartition(X, tau, topN=np.inf, use_structure_coverage=False,
 
     # Main algorithm execution
     try:
-        solutionList = fullAlgorithm(np.copy(X), tau, topN, use_structure_coverage, 
-                                column_weight, structure_coverage_weight,
-                                use_lexicographic, use_epsilon_secondary, epsilon_secondary, delta_secondary)
+        solutionList = fullAlgorithm(np.copy(X), tau, topN)
         
         # Optional: verify the solution
         # verifySolution(solutionList, X, tau)
@@ -282,26 +242,7 @@ def example_usage():
     print(solution)
     print(f"Solution shape: {solution.shape}")
     
-    # Run with structure coverage (epsilon secondary)
-    solution_coverage = MSTPPartition(X, tau, topN, 
-                                     use_structure_coverage=True,
-                                     column_weight=0.7,
-                                     structure_coverage_weight=0.3)
-    
-    print(f"\nStructure Coverage Solution (epsilon secondary):")
-    print(solution_coverage)
-    print(f"Solution shape: {solution_coverage.shape}")
-    
-    # Run with structure coverage (lexicographic)
-    solution_lex = MSTPPartition(X, tau, topN, 
-                                 use_structure_coverage=True,
-                                 use_lexicographic=True)
-    
-    print(f"\nStructure Coverage Solution (lexicographic):")
-    print(solution_lex)
-    print(f"Solution shape: {solution_lex.shape}")
-    
-    return solution, solution_coverage, solution_lex
+    return solution
 
 
 if __name__ == "__main__":

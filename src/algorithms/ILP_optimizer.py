@@ -32,14 +32,6 @@ class BinaryMatrixILPOptimizer:
                  output_flag: bool = False,
                  debug: bool = False,
                  use_pre_aggregation: bool = True,
-                 use_structure_coverage: bool = False,
-                 use_lexicographic: bool = True,
-                 use_epsilon_secondary: bool = True,
-                 epsilon_secondary: float = 1.0,
-                 delta_secondary: float = 1.0,
-                 # Back-compat knobs (ignored when use_lexicographic=True)
-                 column_weight: float = 0.7,
-                 structure_coverage_weight: float = 0.3,
                  objn_reltol: Optional[float] = None,
                  objn_abstol: Optional[float] = None):
         """
@@ -51,10 +43,6 @@ class BinaryMatrixILPOptimizer:
             output_flag: Whether to show solver output
             debug: Whether to enable debug output
             use_pre_aggregation: Whether to pre-aggregate identical rows
-            use_structure_coverage: Whether to maximize structure coverage in addition to column selection
-            use_lexicographic: Use multi-objective priorities (primary columns > secondary coverage)
-            column_weight: Weight for column selection objective (default: 0.7) - only used if not lexicographic
-            structure_coverage_weight: Weight for structure coverage objective (default: 0.3) - only used if not lexicographic
             objn_reltol: Optional multi-objective relative tolerance for primary objective locking
             objn_abstol: Optional multi-objective absolute tolerance for primary objective locking
         """
@@ -66,23 +54,8 @@ class BinaryMatrixILPOptimizer:
         self.output_flag = output_flag
         self.debug = debug
         self.use_pre_aggregation = use_pre_aggregation
-        self.use_structure_coverage = use_structure_coverage
-        self.use_lexicographic = use_lexicographic
-        self.use_epsilon_secondary = use_epsilon_secondary
-        self.epsilon_secondary = epsilon_secondary
-        self.delta_secondary = delta_secondary
-        # If using the epsilon-trick single objective, disable lexicographic multi-objective
-        if self.use_epsilon_secondary:
-            self.use_lexicographic = False
-        self.column_weight = column_weight
-        self.structure_coverage_weight = structure_coverage_weight
         self.objn_reltol = objn_reltol
         self.objn_abstol = objn_abstol
-        
-        # Validate weights if structure coverage is enabled and not using lexicographic
-        if not self.use_lexicographic and self.use_structure_coverage:
-            if abs(column_weight + structure_coverage_weight - 1.0) > 1e-6:
-                raise ValueError(f"Weights must sum to 1.0, got {column_weight} + {structure_coverage_weight} = {column_weight + structure_coverage_weight}")
     
     def _get_default_connection_params(self) -> Optional[Dict]:
         """
@@ -244,39 +217,10 @@ class BinaryMatrixILPOptimizer:
                 y = model.addVars(m, vtype=GRB.BINARY, name="y")
                 z = model.addVars(m, m, vtype=GRB.BINARY, name="z")
                 w = model.addVars(m, m, vtype=GRB.CONTINUOUS, name="w")
-                
-                # Structure coverage variables (only if enabled)
-                if self.use_structure_coverage:
-                    s = model.addVars(m, vtype=GRB.BINARY, name="s")
 
-                # Objective: Column selection (primary) + optional structure coverage (secondary)
+                # Objective: column selection only
                 column_objective = quicksum((weights[j] if weights is not None else 1.0) * x[j] for j in range(n))
-                
-                if self.use_structure_coverage and self.use_epsilon_secondary:
-                    # Option B: Single objective with tiny secondary term that does not disturb the integer step of the primary
-                    print("DEBUG: Using epsilon secondary term")
-                    cov_sum = quicksum(s[i] for i in range(m))
-                    cov_scaled = (1.0 / (m + self.delta_secondary)) * cov_sum
-                    model.setObjective(column_objective + self.epsilon_secondary * cov_scaled, GRB.MAXIMIZE)
-                elif self.use_structure_coverage and not self.use_lexicographic:
-                    # Back-compat blended objective (convex combination)
-                    print("DEBUG: Using blended objective")
-                    structure_coverage_objective = quicksum(s[i] for i in range(m))
-                    model.setObjective(
-                        self.column_weight * column_objective + 
-                        self.structure_coverage_weight * structure_coverage_objective,
-                        GRB.MAXIMIZE
-                    )
-                elif self.use_structure_coverage and self.use_lexicographic:
-                    # Lexicographic optimization (kept for compatibility if explicitly requested)
-                    print("DEBUG: Using lexicographic optimization with Gurobi's multi-objective API")
-                    model.setObjectiveN(column_objective, index=0, priority=2, name="PrimaryColumns")
-                    structure_coverage_objective = quicksum(s[i] for i in range(m))
-                    model.setObjectiveN(structure_coverage_objective, index=1, priority=1, name="SecondaryCoverage")
-                    model.ModelSense = GRB.MAXIMIZE
-                else:
-                    # No coverage objective - only column selection
-                    model.setObjective(column_objective, GRB.MAXIMIZE)
+                model.setObjective(column_objective, GRB.MAXIMIZE)
 
                 # At most tau representatives
                 model.addConstr(quicksum(y[i] for i in range(m)) <= tau, "MaxTau")
@@ -302,16 +246,6 @@ class BinaryMatrixILPOptimizer:
                         model.addConstr(z[i, i2] <= y[i])
                         model.addConstr(z[i, i2] >= y[i] - w[i, i2])
                 
-                # Structure coverage constraints (only if enabled)
-                if self.use_structure_coverage:
-                    for i in range(m):
-                        # s[i] <= sum of selected columns that structure i contains
-                        model.addConstr(s[i] <= quicksum(matrix[i, j] * x[j] for j in range(n)))
-                        
-                        # s[i] >= 1 if structure i contains any selected column
-                        coverage_sum = quicksum(matrix[i, j] * x[j] for j in range(n))
-                        model.addGenConstrIndicator(s[i], True, coverage_sum >= 1)
-
                 # Solve the model
                 model.optimize()
                 
@@ -349,11 +283,6 @@ class BinaryMatrixILPOptimizer:
                     # Get objective value from incumbent solution
                     objective_value = model.ObjVal if has_solution else 0.0
                     unweighted_objective = sum(1 for j in selected_columns)
-                    
-                    # Calculate structure coverage if enabled
-                    structure_coverage = 0
-                    if self.use_structure_coverage and has_solution:
-                        structure_coverage = sum(1 for i in range(m) if s[i].X > 0.5)
                     
                     # Cluster assignment via z[i, i']
                     cluster_map = {}
@@ -395,11 +324,6 @@ class BinaryMatrixILPOptimizer:
                         'has_incumbent': has_solution
                     }
                     
-                    # Add structure coverage info if enabled
-                    if self.use_structure_coverage:
-                        result['structure_coverage'] = structure_coverage
-                        result['coverage_ratio'] = (structure_coverage / m) if m > 0 else 0.0
-                    
                     if self.debug and has_solution:
                         optimality_str = "OPTIMAL" if model.status == GRB.OPTIMAL else "NON-OPTIMAL (incumbent)"
                         print(f"\nSolution status: {optimality_str}")
@@ -411,9 +335,6 @@ class BinaryMatrixILPOptimizer:
                         print("Clusters (rep → rows):")
                         for rep, members in result['cluster_map'].items():
                             print(f"  {rep}: {members}")
-                        if self.use_structure_coverage:
-                            print(f"Coverage: {result['structure_coverage']}/{m} "
-                                  f"({result['coverage_ratio']:.3f})")
                     
                     return result
                 
@@ -490,38 +411,28 @@ def implement_ilp_gurobi_remote(matrix: np.ndarray, tau: int, env: gp.Env, weigh
 
 
 def main():
-    """Example usage of the BinaryMatrixILPOptimizer with lexicographic optimization."""
+    """Example usage of the BinaryMatrixILPOptimizer with column-only objective."""
     # Example matrix
     np.random.seed(1)
     matrix = np.random.randint(0, 2, size=(6, 8))  # m=6 rows, n=8 columns
     weights = np.linspace(0.1, 1.0, 8)  # Different weights for each column
     tau = 2
 
-    # Create optimizer with single-objective epsilon secondary trick
+    # Create optimizer (column-only objective)
     optimizer = BinaryMatrixILPOptimizer(
         debug=True,
         output_flag=True,
         use_pre_aggregation=True,
-        use_structure_coverage=True,    # enable secondary objective
-        use_lexicographic=False,        # disable multi-objective
-        use_epsilon_secondary=True,     # enable Option B epsilon term
-        epsilon_secondary=0.5,
-        delta_secondary=1.0
     )
     if optimizer.debug:
-        print("Using single-objective with epsilon secondary term: "
-              f"epsilon={optimizer.epsilon_secondary}, delta={optimizer.delta_secondary}")
-    # Solve with single-objective epsilon secondary
-    print("=== SINGLE-OBJECTIVE WITH EPSILON SECONDARY ILP ===")
+        print("Using column-only objective")
+    print("=== COLUMN-ONLY ILP ===")
     result = optimizer.solve(matrix, tau, weights=weights)
     print(f"Status: {result['status']}")
     print(f"Runtime: {result['runtime']:.3f} seconds")
     print(f"Selected columns: {result['selected_columns']}")
     print(f"Primary objective (columns): {result['objective_value']:.6f}")
     print(f"Unweighted objective: {result['unweighted_objective']}")
-    if 'structure_coverage' in result:
-        print(f"Secondary objective (coverage): {result['structure_coverage']}/{matrix.shape[0]} "
-              f"({result['coverage_ratio']:.3f})")
     
     if result['error_message']:
         print(f"Error: {result['error_message']}")
