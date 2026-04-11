@@ -89,10 +89,7 @@ class FastaTauAnalyzer:
     def __init__(self, debug: bool = False, time_limit: Optional[int] = None, memory_monitoring: bool = False,
                  ilp_pre_aggregation: bool = True, mstp_pre_aggregation: bool = True,
                  use_structure_units: bool = True, use_weighted_ilp: bool = True,
-                 use_structure_coverage: bool = False, column_weight: float = 0.7, structure_coverage_weight: float = 0.3,
                  track_memory: bool = False,
-                 use_lexicographic: bool = False, use_epsilon_secondary: bool = True,
-                 epsilon_secondary: float = 1.0, delta_secondary: float = 1.0,
                  beam_value: int = 5, beam_values: Optional[List[int]] = None, skip_invalid_tau: bool = True,
                  ilp_continue_on_timeout: bool = False, mstp_extract_from_max_tau: bool = True,
                  detailed_output: bool = False):
@@ -107,14 +104,7 @@ class FastaTauAnalyzer:
             partition_pre_aggregation: Enable pre-aggregation for MSTP algorithms
             use_structure_units: Use structure units matrix instead of base pairs matrix (default: True)
             use_weighted_ilp: Use weighted ILP optimization based on nucleotide counts (default: True)
-            use_structure_coverage: Use structure coverage ILP optimization (default: False)
-            column_weight: Weight for column selection objective (default: 0.7)
-            structure_coverage_weight: Weight for structure coverage objective (default: 0.3)
             track_memory: Track peak memory usage for all algorithms (default: False)
-            use_lexicographic: Use lexicographic multi-objective optimization (default: False)
-            use_epsilon_secondary: Use single-objective with epsilon secondary term (default: True)
-            epsilon_secondary: Scaling factor for secondary objective in epsilon method (default: 1.0)
-            delta_secondary: Denominator offset for scaling coverage term (default: 1.0)
             beam_value: Beam width for MSTP-BEAM algorithm (default: 5)
             skip_invalid_tau: Skip tau values greater than the number of unique structures (default: True)
             ilp_continue_on_timeout: If True, do not skip subsequent taus when ILP hits time limit
@@ -127,14 +117,7 @@ class FastaTauAnalyzer:
         self.mstp_pre_aggregation = mstp_pre_aggregation
         self.use_structure_units = use_structure_units
         self.use_weighted_ilp = use_weighted_ilp
-        self.use_structure_coverage = use_structure_coverage
-        self.column_weight = column_weight
-        self.structure_coverage_weight = structure_coverage_weight
         self.track_memory = track_memory
-        self.use_lexicographic = use_lexicographic
-        self.use_epsilon_secondary = use_epsilon_secondary
-        self.epsilon_secondary = epsilon_secondary
-        self.delta_secondary = delta_secondary
         self.beam_value = beam_value  # Default/primary beam value (for backward compatibility)
         self.beam_values = beam_values if beam_values is not None else [beam_value]  # All beam values to run
         self.skip_invalid_tau = skip_invalid_tau
@@ -409,18 +392,6 @@ class FastaTauAnalyzer:
         """
         if self.debug:
             print(f"  Running MSTP algorithm with tau={tau}")
-            if self.use_structure_coverage:
-                print(f"    Structure coverage: ENABLED")
-                if self.use_lexicographic:
-                    print(f"      Optimization method: Lexicographic multi-objective")
-                elif self.use_epsilon_secondary:
-                    print(f"      Optimization method: Epsilon secondary term")
-                    print(f"        Epsilon: {self.epsilon_secondary}, Delta: {self.delta_secondary}")
-                else:
-                    print(f"      Optimization method: Blended objective")
-                    print(f"        Column weight: {self.column_weight}, Coverage weight: {self.structure_coverage_weight}")
-            else:
-                print(f"    Structure coverage: DISABLED")
             
         start_time = time.time()
         
@@ -431,19 +402,11 @@ class FastaTauAnalyzer:
             memory_monitor.start_monitoring()
         
         try:
-            # Use MSTPPartition with structure coverage support
+            # Use MSTPPartition
             from algorithms.mstp_partitioner import MSTPPartition
             
-            # Run the MSTP algorithm with structure coverage options
             solution = MSTPPartition(
-                matrix, tau, np.inf,  # Use np.inf for topN (no limit)
-                use_structure_coverage=self.use_structure_coverage,
-                column_weight=self.column_weight,
-                structure_coverage_weight=self.structure_coverage_weight,
-                use_lexicographic=self.use_lexicographic,
-                use_epsilon_secondary=self.use_epsilon_secondary,
-                epsilon_secondary=self.epsilon_secondary,
-                delta_secondary=self.delta_secondary
+                matrix, tau, np.inf  # Use np.inf for topN (no limit)
             )
             runtime = time.time() - start_time
             
@@ -588,18 +551,6 @@ class FastaTauAnalyzer:
         """
         if self.debug:
             print(f"  Running MSTP-BEAM algorithm with tau={tau}, beam={self.beam_value}")
-            if self.use_structure_coverage:
-                print(f"    Structure coverage: ENABLED")
-                if self.use_lexicographic:
-                    print(f"      Optimization method: Lexicographic multi-objective")
-                elif self.use_epsilon_secondary:
-                    print(f"      Optimization method: Epsilon secondary term")
-                    print(f"        Epsilon: {self.epsilon_secondary}, Delta: {self.delta_secondary}")
-                else:
-                    print(f"      Optimization method: Blended objective")
-                    print(f"        Column weight: {self.column_weight}, Coverage weight: {self.structure_coverage_weight}")
-            else:
-                print(f"    Structure coverage: DISABLED")
             
         start_time = time.time()
         
@@ -613,16 +564,8 @@ class FastaTauAnalyzer:
             # Import the MSTPPartition function
             from algorithms.mstp_partitioner import MSTPPartition
             
-            # Run the MSTP-BEAM algorithm with structure coverage options
             solution = MSTPPartition(
-                matrix, tau, self.beam_value,
-                use_structure_coverage=self.use_structure_coverage,
-                column_weight=self.column_weight,
-                structure_coverage_weight=self.structure_coverage_weight,
-                use_lexicographic=self.use_lexicographic,
-                use_epsilon_secondary=self.use_epsilon_secondary,
-                epsilon_secondary=self.epsilon_secondary,
-                delta_secondary=self.delta_secondary
+                matrix, tau, self.beam_value
             )
             runtime = time.time() - start_time
             
@@ -867,13 +810,6 @@ class FastaTauAnalyzer:
                 time_limit=self.time_limit,
                 debug=self.debug,
                 use_pre_aggregation=False,  # Pre-aggregation now done at matrix creation level
-                use_structure_coverage=self.use_structure_coverage,
-                use_lexicographic=self.use_lexicographic,
-                use_epsilon_secondary=self.use_epsilon_secondary,
-                epsilon_secondary=self.epsilon_secondary,
-                delta_secondary=self.delta_secondary,
-                column_weight=self.column_weight,
-                structure_coverage_weight=self.structure_coverage_weight
             )
             result = optimizer.solve(matrix, tau=tau, weights=weights)
             runtime = time.time() - start_time
@@ -1922,21 +1858,6 @@ Examples:
   # Weighted ILP is enabled by default; disable if needed
   python src/MASS.py --input input.fasta --tau-range 2 6 --output results.csv --no-weighted-ilp
   
-  # Use structure coverage optimization for both algorithms (default: behaves like original)
-  python src/MASS.py --input input.fasta --tau-range 2 6 --output results.csv --use-structure-coverage
-  
-  # Use lexicographic multi-objective optimization
-  python src/MASS.py --input input.fasta --tau-range 2 6 --output results.csv --use-structure-coverage --use-lexicographic
-  
-  # Use epsilon secondary term (default behavior)
-  python src/MASS.py --input input.fasta --tau-range 2 6 --output results.csv --use-structure-coverage
-  
-  # Use blended objective instead of epsilon secondary
-  python src/MASS.py --input input.fasta --tau-range 2 6 --output results.csv --use-structure-coverage --use-blended-objective
-  
-  # Use epsilon secondary term with custom values
-  python src/MASS.py --input input.fasta --tau-range 2 6 --output results.csv --use-structure-coverage --epsilon-secondary 0.5 --delta-secondary 2.0
-  
   # Run MSTP-BEAM algorithm
   python src/MASS.py --input input.fasta --tau-range 2 6 --output results.csv --algorithm mstp_beam --beam-value 10
   
@@ -1987,20 +1908,6 @@ Examples:
     parser.add_argument('--no-weighted-ilp', dest='use_weighted_ilp', action='store_false', default=True,
                        help='Disable weighted ILP optimization (default: weighted ILP is enabled)')
     
-    # Structure Coverage options (for both ILP and Partition algorithms)
-    parser.add_argument('--use-structure-coverage', action='store_true',
-                       help='Use structure coverage optimization to maximize structures containing selected columns (works for both ILP and Partition algorithms)')
-    
-    # Multi-objective optimization options
-    parser.add_argument('--use-lexicographic', action='store_true',
-                       help='Use lexicographic multi-objective optimization (default: epsilon secondary)')
-    parser.add_argument('--use-blended-objective', action='store_true',
-                       help='Use blended objective instead of epsilon secondary (default: epsilon secondary)')
-    parser.add_argument('--epsilon-secondary', type=float, default=1.0,
-                       help='Scaling factor for secondary objective in epsilon method (default: 1.0)')
-    parser.add_argument('--delta-secondary', type=float, default=1.0,
-                       help='Denominator offset for scaling coverage term (default: 1.0)')
-    
     # MSTP-BEAM options
     parser.add_argument('--beam-value', type=int, nargs='+', default=[5],
                        help='Beam width(s) for MSTP-BEAM algorithm (default: 5). Only used when --algorithm mstp_beam. Can specify multiple values, each will create a separate row with algorithm name MSTP-BEAM-{beam_value})')
@@ -2041,10 +1948,6 @@ Examples:
     original_stdout.write(f"Running analysis...\n")
     original_stdout.flush()
     
-    # Determine optimization method
-    use_lexicographic = args.use_lexicographic
-    use_epsilon_secondary = not args.use_blended_objective  # Default to epsilon secondary
-    
     # Determine tau values
     if args.tau:
         tau_values = [args.tau]
@@ -2057,7 +1960,7 @@ Examples:
     # Simplified algorithm information
     print(f"Algorithm: {args.algorithm.upper()}")
     if args.algorithm == 'ilp':
-        print(f"  ILP: Weighted={args.use_weighted_ilp}, Coverage={args.use_structure_coverage}")
+        print(f"  ILP: Weighted={args.use_weighted_ilp}")
     if args.algorithm == 'mstp':
         print(f"  MSTP: Pre-aggregation={not args.mstp_no_pre_aggregation}")
     if args.algorithm == 'mstp_beam':
@@ -2072,14 +1975,7 @@ Examples:
         mstp_pre_aggregation=not args.mstp_no_pre_aggregation,
         use_structure_units=not args.use_base_pairs,
         use_weighted_ilp=args.use_weighted_ilp,
-        use_structure_coverage=args.use_structure_coverage,
-        column_weight=0.7,  # Default weight (removed coverage-weight flag)
-        structure_coverage_weight=0.3,  # Default weight (removed coverage-weight flag)
         track_memory=args.track_memory,
-        use_lexicographic=use_lexicographic,
-        use_epsilon_secondary=use_epsilon_secondary,
-        epsilon_secondary=args.epsilon_secondary,
-        delta_secondary=args.delta_secondary,
         beam_value=args.beam_value[0] if isinstance(args.beam_value, list) and len(args.beam_value) > 0 else (args.beam_value if isinstance(args.beam_value, int) else 5),
         beam_values=args.beam_value if isinstance(args.beam_value, list) else [args.beam_value] if isinstance(args.beam_value, int) else [5],
         skip_invalid_tau=not args.allow_invalid_tau,
