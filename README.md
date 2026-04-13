@@ -2,6 +2,8 @@
 
 MASS is a tool for summarizing RNA structural ensembles. It takes as input any collection of RNA secondary structures in dot–bracket format and identifies how the structures cluster together. MASS also reports the key structural features responsible for producing these clusters.
 
+[**MASS-data**](https://github.com/elkebir-group/MASS-data) holds the datasets, MASS run outputs, and analysis code used alongside MASS (Maximum Agreement Secondary Structures). It is the companion data repository.
+
 ## Installation
 
 ```bash
