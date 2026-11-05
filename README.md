@@ -31,26 +31,19 @@ MASS uses Gurobi for the ILP algorithm, which requires a license. You can obtain
 
 **Option 1: Web License Service (WLS) - Recommended**
 
-If you have a WLS license, edit `src/gurobi_config.py` and update the `GUROBI_WLS_CONFIG` dictionary with your credentials:
+Never put credentials in the source. Either export them using Gurobi's variable names:
 
-```python
-GUROBI_WLS_CONFIG = {
-    "WLSACCESSID": "your-access-id",
-    "WLSSECRET": "your-secret-key",
-    "LICENSEID": your_license_id,
-}
-USE_LOCAL_LICENSE = False
+```bash
+export GRB_WLSACCESSID=your-access-id
+export GRB_WLSSECRET=your-secret-key
+export GRB_LICENSEID=your-license-id
 ```
+
+or put the same three `NAME=value` lines in a file named `gurobi.env` at the repository root. That file is listed in `.gitignore`, so it is never committed. Environment variables take precedence over the file, and `MASS_GUROBI_ENV` can point to a file elsewhere.
 
 **Option 2: Local License File**
 
-If you have a local Gurobi license file, set `USE_LOCAL_LICENSE = True` in `src/gurobi_config.py`:
-
-```python
-USE_LOCAL_LICENSE = True
-```
-
-The license file should be located at `~/gurobi.lic` or set via the `GRB_LICENSE_FILE` environment variable.
+If no WLS credentials are configured, Gurobi uses a local license file at `~/gurobi.lic` or the path in `GRB_LICENSE_FILE`. Set `MASS_GUROBI_LOCAL_LICENSE=1` to use the local file even when WLS credentials are present.
 
 **Note:** The MSTP and MSTP-BEAM algorithms do not require Gurobi and can be used without a license.
 
