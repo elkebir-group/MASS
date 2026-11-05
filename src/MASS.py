@@ -981,6 +981,12 @@ class FastaTauAnalyzer:
                 # This allows weighted coverage to be calculated (equals unweighted coverage)
                 weights = np.ones(matrix.shape[1], dtype=float) if matrix.shape[1] > 0 else None
             
+            if matrix.shape[1] == 0:
+                raise ValueError(
+                    f"No structural features found in {fasta_file} "
+                    f"({len(metadata.get('valid_structures', [])) or matrix.shape[0]} structures parsed; "
+                    "all are unpaired, empty, or failed to parse)")
+
             # Validate tau values
             max_possible_tau = matrix.shape[0]
             
@@ -1037,42 +1043,6 @@ class FastaTauAnalyzer:
                     mstp_memory_failure_detected = True
                     mstp_solution_matrix = None
                     mstp_max_tau_result = None
-            
-            # Handle single-run MSTP-BEAM algorithm (run once for max tau, extract solutions for all)
-            mstp_beam_solution_matrix = None
-            mstp_beam_max_tau_result = None
-            if (self.mstp_extract_from_max_tau and 
-                algorithm == 'mstp_beam' and 
-                len(valid_tau_values) > 1):
-                max_tau = max(valid_tau_values)
-                if self.debug:
-                    print(f"\nRunning MSTP-BEAM algorithm once for max tau={max_tau} (will extract solutions for all tau values)")
-                
-                try:
-                    mstp_beam_max_tau_result, mstp_beam_solution_matrix = self.run_mstp_beam_algorithm(
-                        matrix, max_tau, weights, return_solution_matrix=True)
-                    
-                    # Check for memory-related failures
-                    if mstp_beam_max_tau_result and mstp_beam_max_tau_result.get('status') in ['ERROR', 'FAILED']:
-                        error_msg = mstp_beam_max_tau_result.get('error_message', '').lower()
-                        memory_keywords = [
-                            'memory', 'out of memory', 'allocation', 'insufficient', 
-                            'cannot allocate', 'memoryerror', 'oom', 'memory limit',
-                            'index out of bounds', 'list assignment index out of range'
-                        ]
-                        if any(keyword in error_msg for keyword in memory_keywords):
-                            if self.debug:
-                                print(f"  🚨 MSTP-BEAM algorithm memory failure detected at max tau={max_tau}")
-                                print(f"      Error: {mstp_beam_max_tau_result.get('error_message', 'Unknown error')}")
-                            mstp_beam_memory_failure_detected = True
-                            mstp_beam_solution_matrix = None
-                            mstp_beam_max_tau_result = None
-                except Exception as e:
-                    if self.debug:
-                        print(f"  ❌ Error running MSTP-BEAM algorithm for max tau: {e}")
-                    mstp_beam_memory_failure_detected = True
-                    mstp_beam_solution_matrix = None
-                    mstp_beam_max_tau_result = None
             
             for tau in valid_tau_values:
                 if self.debug:
@@ -1214,24 +1184,6 @@ class FastaTauAnalyzer:
                                 'cluster_map': {},
                                 'beam_value': beam_val
                             }
-                        elif mstp_beam_solution_matrix is not None and beam_val == self.beam_value:
-                            # Extract solution from pre-computed solution matrix (only for primary beam value)
-                            if self.debug:
-                                print(f"  Extracting MSTP-BEAM solution for tau={tau}, beam={beam_val} from pre-computed solution matrix")
-                            extracted_result = self._extract_partition_solution_for_tau(
-                                mstp_beam_solution_matrix, matrix, tau, weights)
-                            # Use runtime and memory from the max tau run
-                            mstp_beam_results[beam_val] = {
-                                **extracted_result,
-                                'runtime': mstp_beam_max_tau_result['runtime'],
-                                'status': mstp_beam_max_tau_result['status'],
-                                'beam_value': beam_val,
-                                'solution_matrix_shape': mstp_beam_solution_matrix.shape
-                            }
-                            if 'peak_memory_mb' in mstp_beam_max_tau_result:
-                                mstp_beam_results[beam_val]['peak_memory_mb'] = mstp_beam_max_tau_result['peak_memory_mb']
-                            if mstp_beam_max_tau_result['status'] in ['ERROR', 'FAILED']:
-                                mstp_beam_results[beam_val]['error_message'] = mstp_beam_max_tau_result.get('error_message', 'Unknown error')
                         else:
                             # Run MSTP-BEAM algorithm with this beam value
                             # Temporarily set beam_value for this run
@@ -1617,7 +1569,6 @@ class FastaTauAnalyzer:
                         print(f"    {status_icon} MSTP-BEAM-{beam_val} algorithm (tau={tau}): {mstp_beam_result['status']}, {mstp_beam_result['runtime']:.3f}s{memory_info}")
             
             # Clean up memory between tau values
-            del mstp_result, ilp_result, mstp_beam_results
             gc.collect()
             
             # Simplified runtime summary
@@ -1681,6 +1632,11 @@ class FastaTauAnalyzer:
             
         except Exception as e:
             print(f"❌ Error analyzing {fasta_file}: {e}")
+            # stdout is redirected to the log file; make file-level failures visible too
+            console = getattr(self, 'original_stdout', None)
+            if console is not None and console is not sys.stdout:
+                console.write(f"❌ Error analyzing {fasta_file}: {e}\n")
+                console.flush()
             import traceback
             error_details = f"File analysis failed: {str(e)}\nTraceback: {traceback.format_exc()}"
             # Add error result
@@ -1708,8 +1664,6 @@ class FastaTauAnalyzer:
             del metadata
         if 'mstp_solution_matrix' in locals() and mstp_solution_matrix is not None:
             del mstp_solution_matrix
-        if 'mstp_beam_solution_matrix' in locals() and mstp_beam_solution_matrix is not None:
-            del mstp_beam_solution_matrix
         gc.collect()
         
         return file_results
@@ -1918,7 +1872,7 @@ Examples:
     
     # MSTP algorithm optimization options
     parser.add_argument('--no-mstp-extract-from-max-tau', dest='mstp_extract_from_max_tau', action='store_false', default=True,
-                       help='Disable running MSTP algorithm once for max tau and extracting solutions for all tau values (default: enabled, only applies to tau ranges)')
+                       help='Disable running MSTP algorithm once for max tau and extracting solutions for all tau values (default: enabled, only applies to tau ranges; MSTP-BEAM always runs each tau separately because beam results depend on tau)')
     
     # Output options
     parser.add_argument('--output', '-o', type=str, required=True, help='Output CSV file path')
