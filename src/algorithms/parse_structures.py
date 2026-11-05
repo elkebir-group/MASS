@@ -471,9 +471,11 @@ def _parse_fasta_or_text_file(filename: str) -> List[Tuple[str, Optional[str], s
                 # Skip lines before first ID
                 continue
             elif current_seq is None:
-                # This could be either sequence or structure
-                # Check if it looks like a structure (contains brackets)
-                if any(c in line for c in '().[]{}'):
+                # This could be either sequence or structure. Structures never
+                # contain letters; sequences always do. (Checking for bracket
+                # or dot characters is not enough: aligned sequences may use
+                # '.' as a gap, e.g. Stockholm/Rfam exports.)
+                if not any(c.isalpha() for c in line):
                     # It's a structure (no sequence provided)
                     structure_part = line.split()[0]  # Take only the bracket part
                     structures.append((current_id, None, structure_part))
@@ -481,7 +483,9 @@ def _parse_fasta_or_text_file(filename: str) -> List[Tuple[str, Optional[str], s
                 else:
                     # It's a sequence line
                     parts = line.split()
-                    current_seq = parts[0]  # Take only the sequence part
+                    # Normalise alignment gap characters to '-', the only gap
+                    # character recognised downstream.
+                    current_seq = parts[0].replace('.', '-').replace('~', '-')
             else:
                 # We have sequence, this must be structure
                 structure_part = line.split()[0]  # Take only the bracket part
