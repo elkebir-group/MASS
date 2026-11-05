@@ -1,27 +1,56 @@
 """
-Gurobi license configuration file.
+Gurobi license configuration.
 
-This file contains the Gurobi Web License Service (WLS) connection parameters.
-You can obtain a free academic license from: https://www.gurobi.com/academia/academic-program-and-licenses/
+Credentials are never stored in this repository. For a Web License Service
+(WLS) license, provide them in one of two ways (the environment wins):
 
-For WLS licenses, you need:
-- WLSACCESSID: Your WLS access ID
-- WLSSECRET: Your WLS secret key
-- LICENSEID: Your license ID number
+1. Environment variables, using Gurobi's own names:
+       GRB_WLSACCESSID, GRB_WLSSECRET, GRB_LICENSEID
+2. An untracked file ``gurobi.env`` at the repository root (or the path in
+   ``MASS_GUROBI_ENV``) with one ``NAME=value`` per line, same names.
 
-Alternatively, if you have a local Gurobi license, you can set these to None and Gurobi will use
-the local license file (typically located at ~/gurobi.lic or configured via GRB_LICENSE_FILE).
+If none are set, Gurobi falls back to a local license file (``~/gurobi.lic``
+or ``GRB_LICENSE_FILE``). Set ``MASS_GUROBI_LOCAL_LICENSE=1`` to force that.
+
+A free academic license: https://www.gurobi.com/academia/academic-program-and-licenses/
 """
 
-# Gurobi Web License Service (WLS) connection parameters
-# Set to None if using a local license file instead
-GUROBI_WLS_CONFIG = {
-    "WLSACCESSID": "3de5b0e3-4676-4546-858c-045b24afbf61",
-    "WLSSECRET": "27e16772-b43e-4edc-840d-e1b55a766684",
-    "LICENSEID": 2685986,
-}
+import os
+from pathlib import Path
 
-# Alternative: Use local license file
-# Set this to True to use a local Gurobi license file instead of WLS
-USE_LOCAL_LICENSE = False
+_KEYS = ("GRB_WLSACCESSID", "GRB_WLSSECRET", "GRB_LICENSEID")
+_DEFAULT_ENV_FILE = Path(__file__).resolve().parent.parent / "gurobi.env"
 
+
+def _read_env_file(path):
+    values = {}
+    try:
+        with open(path, encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if not line or line.startswith("#") or "=" not in line:
+                    continue
+                name, value = line.split("=", 1)
+                values[name.strip()] = value.strip().strip('"').strip("'")
+    except FileNotFoundError:
+        pass
+    return values
+
+
+def _load_wls_config():
+    from_file = _read_env_file(os.environ.get("MASS_GUROBI_ENV", _DEFAULT_ENV_FILE))
+    values = {k: os.environ.get(k) or from_file.get(k) for k in _KEYS}
+    if not all(values.values()):
+        return None
+    return {
+        "WLSACCESSID": values["GRB_WLSACCESSID"],
+        "WLSSECRET": values["GRB_WLSSECRET"],
+        "LICENSEID": int(values["GRB_LICENSEID"]),
+    }
+
+
+# Use a local license file instead of WLS.
+USE_LOCAL_LICENSE = os.environ.get("MASS_GUROBI_LOCAL_LICENSE", "") not in ("", "0")
+
+# WLS connection parameters, or None when no credentials are configured.
+GUROBI_WLS_CONFIG = None if USE_LOCAL_LICENSE else _load_wls_config()
